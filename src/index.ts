@@ -30,13 +30,11 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: '*' } });
 initWS(io);
 
-// --- Healthcheck ---
-app.get('/health', (_: Request, res: Response) =>
-  res.json({ ok: true, ts: Date.now() })
-);
+// Health
+app.get('/health', (_: Request, res: Response) => res.json({ ok: true, ts: Date.now() }));
 
-// --- Quote ---
-const Quote = z.object({
+// Quote
+const QuoteSchema = z.object({
   fromChain: z.string(),
   toChain: z.string(),
   token: z.string(),
@@ -45,69 +43,54 @@ const Quote = z.object({
 });
 
 app.post('/v1/quote', async (req: Request, res: Response) => {
-  try {
-    const p = Quote.safeParse(req.body);
-    if (!p.success)
-      return res.status(400).json({ error: p.error.flatten() });
-    const result = await quote(p.data as any);
-    return res.json(result);
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
+  const p = QuoteSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+  const result = await quote(p.data as any);
+  return res.json(result);
 });
 
-// --- Orders ---
-const Order = Quote.extend({
+// Orders
+const OrderSchema = QuoteSchema.extend({
   recipient: z.string().min(4),
   sender: z.string().optional(),
 });
 
 app.post('/v1/orders', async (req: Request, res: Response) => {
-  try {
-    const p = Order.safeParse(req.body);
-    if (!p.success)
-      return res.status(400).json({ error: p.error.flatten() });
+  const p = OrderSchema.safeParse(req.body);
+  if (!p.success) return res.status(400).json({ error: p.error.flatten() });
 
-    const b = p.data;
-    const messageId = 'axn_' + Math.random().toString(36).slice(2);
+  const b = p.data;
+  const messageId = 'axn_' + Math.random().toString(36).slice(2);
 
-    await prisma.message.create({
-      data: {
-        messageId,
-        srcChain: b.fromChain,
-        dstChain: b.toChain,
-        token: b.token,
-        amount: b.amount,
-        sender: b.sender || 'unknown',
-        recipient: b.recipient,
-        status: 'INITIATED',
-      },
-    });
+  await prisma.message.create({
+    data: {
+      messageId,
+      srcChain: b.fromChain,
+      dstChain: b.toChain,
+      token: b.token,
+      amount: b.amount,
+      sender: b.sender || 'unknown',
+      recipient: b.recipient,
+      status: 'INITIATED',
+    },
+  });
 
-    res.json({
-      orderId: messageId,
-      deposit: {
-        chain: b.fromChain,
-        address: 'DEPOSIT_' + b.fromChain.toUpperCase(),
-      },
-    });
+  res.json({
+    orderId: messageId,
+    deposit: { chain: b.fromChain, address: 'DEPOSIT_' + b.fromChain.toUpperCase() },
+  });
 
-    emitMessageUpdate(io, messageId);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+  emitMessageUpdate(io, messageId);
 });
 
-// --- Order Detail ---
+// Order detail
 app.get('/v1/orders/:id', async (req: Request, res: Response) => {
-  const m = await prisma.message.findUnique({
-    where: { messageId: req.params.id },
-  });
+  const m = await prisma.message.findUnique({ where: { messageId: req.params.id } });
   if (!m) return res.status(404).json({ error: 'not found' });
   res.json({ status: m.status, srcTx: m.srcTx, dstTx: m.dstTx, message: m });
 });
 
-// --- Messages List ---
+// Messages
 app.get('/v1/messages', async (req: Request, res: Response) => {
   const { status, src, dst, q, limit = '100' } = req.query as any;
   const where: any = {};
@@ -130,25 +113,16 @@ app.get('/v1/messages', async (req: Request, res: Response) => {
   res.json({ items });
 });
 
-// --- Metrics Overview ---
+// Metrics
 app.get('/v1/metrics/overview', async (_: Request, res: Response) => {
   const since = new Date(Date.now() - 24 * 3600 * 1000);
-  const total = await prisma.message.count({
-    where: { createdAt: { gte: since } },
-  });
+  const total = await prisma.message.count({ where: { createdAt: { gte: since } } });
   const finalized = await prisma.message.count({
     where: { createdAt: { gte: since }, status: 'FINALIZED' },
   });
-  res.json({
-    tx24h: total,
-    successRate: total ? finalized / total : 0,
-    p50: 80,
-    p95: 120,
-    alerts24h: 0,
-  });
+  res.json({ tx24h: total, successRate: total ? finalized / total : 0, p50: 80, p95: 120, alerts24h: 0 });
 });
 
-// --- Routes & Validators ---
 app.get('/v1/routes', async (_: Request, res: Response) => {
   res.json({ items: await prisma.route.findMany() });
 });
@@ -157,15 +131,13 @@ app.get('/v1/validators', async (_: Request, res: Response) => {
   res.json({ items: await prisma.validator.findMany() });
 });
 
-// --- Simulator ---
+// Simulator
 async function simulator() {
   const pending = await prisma.message.findMany({
     where: { status: { in: ['INITIATED', 'ATTESTED'] } },
   });
-
   for (const m of pending) {
     const age = Date.now() - m.createdAt.getTime();
-
     if (age > 15000) {
       await prisma.message.update({
         where: { id: m.id },
@@ -173,7 +145,6 @@ async function simulator() {
       });
       emitMessageUpdate(io, m.messageId);
     }
-
     if (age > 35000) {
       await prisma.message.update({
         where: { id: m.id },
@@ -182,10 +153,8 @@ async function simulator() {
       emitMessageUpdate(io, m.messageId);
     }
   }
-
   setTimeout(simulator, 5000);
 }
-
 simulator();
 
 const PORT = Number(process.env.PORT || 8080);
