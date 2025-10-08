@@ -1,5 +1,44 @@
-generator client { provider = "prisma-client-js" }
-datasource db { provider = "postgresql" url = env("DATABASE_URL") }
-model Message { id String @id @default(cuid()) messageId String @unique srcChain String dstChain String token String amount Float sender String recipient String status String @default("INITIATED") srcTx String? dstTx String? createdAt DateTime @default(now()) updatedAt DateTime @updatedAt }
-model Route { id String @id @default(cuid()) srcChain String dstChain String token String feeBps Int paused Boolean @default(false) p95Sec Int @default(90) }
-model Validator { id String @id @default(cuid()) name String region String quorum Float missed Float epoch Int health String }
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  messageId  String   @unique
+  srcChain   String
+  dstChain   String
+  token      String
+  amount     Float
+  sender     String
+  recipient  String
+  status     String   @default("INITIATED")
+  srcTx      String?
+  dstTx      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Route {
+  id        String  @id @default(cuid())
+  srcChain  String
+  dstChain  String
+  token     String
+  feeBps    Int
+  paused    Boolean @default(false)
+  p95Sec    Int     @default(90)
+}
+
+model Validator {
+  id        String  @id @default(cuid())
+  name      String
+  region    String
+  quorum    Float
+  missed    Float
+  epoch     Int
+  health    String
+}
